@@ -1,0 +1,212 @@
+module tb_top;
+
+reg clk;
+reg reset;
+
+reg write_req;
+reg read_req;
+
+reg [23:0] addr;
+reg [15:0] wdata;
+
+wire [15:0] rdata;
+wire busy;
+
+wire sdram_clk;
+wire sdram_cke;
+wire sdram_cs_n;
+wire sdram_ras_n;
+wire sdram_cas_n;
+wire sdram_we_n;
+
+wire [12:0] sdram_addr;
+wire [1:0] sdram_ba;
+
+wire [15:0] sdram_dq;
+
+// =====================================================
+// SIMPLE SDRAM MEMORY MODEL
+// =====================================================
+
+reg [15:0] memory [0:65535];
+
+reg [15:0] dq_reg;
+reg dq_drive;
+
+assign sdram_dq = (dq_drive) ? dq_reg : 16'bz;
+
+// =====================================================
+// DUT
+// =====================================================
+
+top dut(
+
+.clk(clk),
+.reset(reset),
+
+.write_req(write_req),
+.read_req(read_req),
+
+.addr(addr),
+.wdata(wdata),
+
+.rdata(rdata),
+.busy(busy),
+
+.sdram_clk(sdram_clk),
+.sdram_cke(sdram_cke),
+
+.sdram_cs_n(sdram_cs_n),
+.sdram_ras_n(sdram_ras_n),
+.sdram_cas_n(sdram_cas_n),
+.sdram_we_n(sdram_we_n),
+
+.sdram_addr(sdram_addr),
+.sdram_ba(sdram_ba),
+
+.sdram_dq(sdram_dq)
+);
+
+// =====================================================
+// CLOCK GENERATION
+// =====================================================
+
+always #5 clk = ~clk;
+
+// =====================================================
+// MEMORY INITIALIZATION
+// =====================================================
+
+integer i;
+
+initial begin
+
+for(i=0; i<65536; i=i+1)
+    memory[i] = 16'h0000;
+end
+
+// =====================================================
+// WRITE OPERATION
+// =====================================================
+
+always @(posedge clk) begin
+
+// WRITE COMMAND
+if(
+    sdram_ras_n == 1 &&
+    sdram_cas_n == 0 &&
+    sdram_we_n  == 0
+) begin
+
+    memory[addr] <= sdram_dq;
+
+    $display(
+        "WRITE: TIME=%0t ADDR=%h DATA=%h",
+        $time,
+        addr,
+        sdram_dq
+    );
+
+end
+end
+
+// =====================================================
+// READ OPERATION
+// =====================================================
+
+always @(*) begin
+
+dq_drive = 0;
+dq_reg   = 16'hzzzz;
+
+// READ COMMAND
+if(
+    sdram_ras_n == 1 &&
+    sdram_cas_n == 0 &&
+    sdram_we_n  == 1
+) begin
+
+    dq_drive = 1;
+
+    dq_reg = memory[addr];
+
+end
+end
+
+// =====================================================
+// TEST SEQUENCE
+// =====================================================
+
+initial begin
+
+clk = 0;
+reset = 1;
+
+write_req = 0;
+read_req  = 0;
+
+addr  = 0;
+wdata = 0;
+
+// RESET
+#20;
+reset = 0;
+
+// ==========================================
+// WRITE TRANSACTION
+// ==========================================
+
+#20;
+
+addr      = 24'h000010;
+wdata     = 16'hABCD;
+
+write_req = 1;
+
+#10;
+write_req = 0;
+
+// ==========================================
+// WAIT
+// ==========================================
+
+#100;
+
+// ==========================================
+// READ TRANSACTION
+// ==========================================
+
+addr     = 24'h000010;
+
+read_req = 1;
+
+#10;
+read_req = 0;
+
+// ==========================================
+// WAIT
+// ==========================================
+
+#200;
+
+$finish;
+end
+
+// =====================================================
+// MONITOR
+// =====================================================
+
+initial begin
+
+$monitor(
+    "TIME=%0t STATE=%0d ADDR=%h WDATA=%h RDATA=%h BUSY=%b",
+    $time,
+    dut.uut.state,
+    addr,
+    wdata,
+    rdata,
+    busy
+);
+end
+
+endmodule
